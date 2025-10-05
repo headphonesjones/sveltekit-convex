@@ -1,0 +1,375 @@
+---
+description: Complete full-stack integration example showing all technologies working together
+globs:
+  - '**/*.svelte'
+  - '**/convex/**/*.ts'
+  - '**/routes/**/*'
+tags:
+  - example
+  - integration
+  - full-stack
+  - todo-app
+priority: 2
+version: 1.0.0
+alwaysApply: false
+---
+
+# Complete Integration Example
+
+**Scenario**: Todo list with auth, real-time updates, error handling, persisted UI state
+
+This example demonstrates how all stack components work together in a real feature.
+
+---
+
+## 1. Schema (Convex)
+
+```typescript
+// convex/schema.ts
+export default defineSchema({
+	todos: defineTable({
+		text: v.string(),
+		completed: v.boolean(),
+		userId: v.string(),
+		createdAt: v.number()
+	}).index('by_user', ['userId', 'createdAt'])
+});
+```
+
+---
+
+## 2. Backend Functions (Convex)
+
+```typescript
+// convex/todos.ts
+import { query, mutation } from './_generated/server';
+import { v } from 'convex/values';
+
+export const list = query({
+	handler: async (ctx) => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) return [];
+
+		return await ctx.db
+			.query('todos')
+			.withIndex('by_user', (q) => q.eq('userId', identity.subject))
+			.order('desc')
+			.collect();
+	}
+});
+
+export const create = mutation({
+	args: { text: v.string() },
+	handler: async (ctx, args) => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) throw new Error('Not authenticated');
+
+		return await ctx.db.insert('todos', {
+			text: args.text,
+			completed: false,
+			userId: identity.subject,
+			createdAt: Date.now()
+		});
+	}
+});
+
+export const toggle = mutation({
+	args: { id: v.id('todos') },
+	handler: async (ctx, args) => {
+		const todo = await ctx.db.get(args.id);
+		if (!todo) throw new Error('Not found');
+		await ctx.db.patch(args.id, { completed: !todo.completed });
+	}
+});
+
+export const remove = mutation({
+	args: { id: v.id('todos') },
+	handler: async (ctx, args) => {
+		await ctx.db.delete(args.id);
+	}
+});
+```
+
+---
+
+## 3. Frontend Component (SvelteKit + Svelte 5)
+
+```svelte
+<!-- src/routes/todos/+page.svelte -->
+<script>
+	import { useQuery, useMutation } from 'convex-svelte';
+	import { api } from '../../convex/_generated/api';
+	import { PersistedState } from 'runed';
+	import { err, ok } from 'neverthrow';
+
+	// Real-time queries (auto-updates via WebSocket)
+	const todos = useQuery(api.todos.list, {});
+	const createTodo = useMutation(api.todos.create);
+	const toggleTodo = useMutation(api.todos.toggle);
+	const removeTodo = useMutation(api.todos.remove);
+
+	// Local state with Svelte 5 runes
+	let newTodoText = $state('');
+	let error = $state<string | null>(null);
+
+	// Persisted UI preference (Runed utility)
+	const showCompleted = new PersistedState('show-completed', true);
+
+	// Derived state (computed values)
+	const filteredTodos = $derived(
+		$todos?.filter((t) => showCompleted.current || !t.completed) ?? []
+	);
+
+	const stats = $derived({
+		total: $todos?.length ?? 0,
+		completed: $todos?.filter((t) => t.completed).length ?? 0,
+		pending: $todos?.filter((t) => !t.completed).length ?? 0
+	});
+
+	// Create with error handling
+	async function handleCreate() {
+		if (!newTodoText.trim()) {
+			error = 'Todo cannot be empty';
+			return;
+		}
+
+		if (newTodoText.length > 200) {
+			error = 'Todo too long (max 200 chars)';
+			return;
+		}
+
+		try {
+			await createTodo({ text: newTodoText.trim() });
+			newTodoText = '';
+			error = null;
+		} catch (e) {
+			error = e.message;
+		}
+	}
+
+	// Side effect (logging)
+	$effect(() => {
+		if ($todos) {
+			console.log(`Todos updated. Total: ${$todos.length}`);
+		}
+	});
+</script>
+
+<div class="todos">
+	<h1>My Todos</h1>
+
+	<!-- Stats (derived state) -->
+	<div class="stats">
+		<span>Total: {stats.total}</span>
+		<span>Completed: {stats.completed}</span>
+		<span>Pending: {stats.pending}</span>
+	</div>
+
+	<!-- Create form -->
+	<form onsubmit|preventDefault={handleCreate}>
+		<input bind:value={newTodoText} placeholder="What needs to be done?" maxlength="200" />
+		<button type="submit">Add</button>
+	</form>
+
+	{#if error}
+		<p class="error">{error}</p>
+	{/if}
+
+	<!-- Filter toggle (persisted state) -->
+	<label>
+		<input type="checkbox" bind:checked={showCompleted.current} />
+		Show completed
+	</label>
+
+	<!-- Todo list (with proper loading state) -->
+	{#if $todos === undefined}
+		<p>Loading todos...</p>
+	{:else if filteredTodos.length === 0}
+		<p>No todos yet!</p>
+	{:else}
+		<ul>
+			{#each filteredTodos as todo (todo._id)}
+				<li class:completed={todo.completed}>
+					<input
+						type="checkbox"
+						checked={todo.completed}
+						onchange={() => toggleTodo({ id: todo._id })}
+					/>
+					<span>{todo.text}</span>
+					<button onclick={() => removeTodo({ id: todo._id })}> Delete </button>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+</div>
+
+<style>
+	.todos {
+		max-width: 600px;
+		margin: 0 auto;
+		padding: 2rem;
+	}
+	.stats {
+		display: flex;
+		gap: 1rem;
+		margin-bottom: 1rem;
+	}
+	.error {
+		color: red;
+	}
+	.completed {
+		opacity: 0.6;
+		text-decoration: line-through;
+	}
+</style>
+```
+
+---
+
+## 4. Route Protection (Better Auth)
+
+```typescript
+// src/routes/todos/+layout.server.ts
+import { redirect } from '@sveltejs/kit';
+import type { LayoutServerLoad } from './$types';
+
+export const load: LayoutServerLoad = async ({ locals, url }) => {
+	// Require authentication
+	if (!locals.user) {
+		redirect(303, `/auth/sign-in?redirect=${url.pathname}`);
+	}
+
+	return {
+		user: locals.user
+	};
+};
+```
+
+---
+
+## Key Patterns Demonstrated
+
+### ✅ Svelte 5 Runes
+
+- **$state**: `newTodoText`, `error` - reactive local state
+- **$derived**: `filteredTodos`, `stats` - computed values
+- **$effect**: Logging side effect when todos change
+- **$props**: Not shown here but used in child components
+
+### ✅ Runed Utilities
+
+- **PersistedState**: `showCompleted` - persists to localStorage
+- Automatically syncs across tabs
+- Type-safe reactive wrapper
+
+### ✅ Convex Real-time
+
+- **useQuery**: Auto-updates when data changes via WebSocket
+- **useMutation**: Type-safe mutations with optimistic updates
+- **Indexes**: `by_user` index for efficient queries
+- **Auth**: Integrated with `ctx.auth.getUserIdentity()`
+
+### ✅ Better Auth
+
+- **Route Protection**: Server-side check in `+layout.server.ts`
+- **User Context**: Available in `locals.user`
+- **Redirect**: Sends to sign-in with return URL
+
+### ✅ Error Handling
+
+- Client-side validation before API call
+- Try-catch for async operations
+- User-friendly error messages
+- Could be enhanced with Neverthrow Result types
+
+### ✅ TypeScript
+
+- Full type inference from Convex to UI
+- Type-safe mutation calls
+- No any types needed
+
+### ✅ Best Practices
+
+- ✓ Proper loading state handling (`$posts === undefined`)
+- ✓ Empty state handling
+- ✓ Server-side auth checks
+- ✓ Reactive derived state instead of duplicating data
+- ✓ Cleanup not needed (Svelte handles it)
+- ✓ Optimistic UI possible (Convex handles it)
+
+---
+
+## Tech Stack Flow in This Example
+
+```
+1. User types in input
+   ↓
+2. Svelte 5 $state updates (newTodoText)
+   ↓
+3. User submits form
+   ↓
+4. Client-side validation (error handling)
+   ↓
+5. useMutation calls Convex (createTodo)
+   ↓
+6. Convex mutation checks auth (ctx.auth.getUserIdentity)
+   ↓
+7. Convex inserts into database with index
+   ↓
+8. WebSocket pushes update to all connected clients
+   ↓
+9. useQuery auto-updates ($todos changes)
+   ↓
+10. Svelte 5 $derived recomputes (filteredTodos, stats)
+    ↓
+11. UI reactively updates
+    ↓
+12. $effect logs the change
+    ↓
+13. PersistedState syncs to localStorage
+```
+
+---
+
+## Alternative: With Neverthrow
+
+```typescript
+// Enhanced validation with Result types
+function validateAndCreate(text: string): Result<void, string> {
+	if (!text.trim()) {
+		return err('Todo cannot be empty');
+	}
+
+	if (text.length > 200) {
+		return err('Todo too long (max 200 chars)');
+	}
+
+	return ok(undefined);
+}
+
+async function handleCreate() {
+	const validation = validateAndCreate(newTodoText);
+
+	if (validation.isErr()) {
+		error = validation.error;
+		return;
+	}
+
+	const result = await ResultAsync.fromPromise(
+		createTodo({ text: newTodoText.trim() }),
+		(e) => e.message
+	);
+
+	result.match({
+		ok: () => {
+			newTodoText = '';
+			error = null;
+		},
+		err: (e) => {
+			error = e;
+		}
+	});
+}
+```
+
+This example shows **every technology in the stack working together** in a practical, production-ready way.

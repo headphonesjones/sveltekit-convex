@@ -1,0 +1,893 @@
+---
+description: Quick reference for daily development with essential patterns and critical rules
+globs:
+  - '**/*.svelte'
+  - '**/*.ts'
+  - '**/*.js'
+  - '**/convex/**/*'
+tags:
+  - quick-reference
+  - daily-development
+  - essentials
+  - patterns
+priority: 1
+version: 1.0.0
+alwaysApply: true
+---
+
+# SvelteKit + Convex Starter - Quick Reference
+
+**Philosophy**: Modern, type-safe, full-stack template for rapid development with real-time capabilities.
+
+**Stack**: SvelteKit + Svelte 5 + Convex + Better Auth + Runed + Neverthrow + Bun
+
+---
+
+## 🔴 Critical Rules
+
+1. **USE BUN, NOT NPM/YARN**: `bun add`, `bun install`, `bun run dev`
+2. **USE SVELTE 5 RUNES**: `$state`, `$derived`, `$effect`, `$props` (NOT Svelte 4 syntax)
+3. **NO SHARED STATE ON SERVER**: Causes data leakage between users
+4. **REMOTE FUNCTIONS ENABLED**: Already configured in svelte.config.js
+
+---
+
+## 🔷 Svelte 5 Runes (Quick Reference)
+
+### `$state` - Reactive State
+
+```svelte
+<script>
+	let count = $state(0);
+	let user = $state({ name: 'Alice', age: 30 });
+
+	// Mutations work directly (deep reactivity)
+	user.age += 1; // UI updates automatically
+</script>
+```
+
+**Rules**: DON'T destructure state objects | DO mutate directly | Use `$state.snapshot()` for external APIs
+
+### `$derived` - Computed Values
+
+Creates reactive computed values that auto-update when dependencies change:
+
+```svelte
+<script>
+	let count = $state(0);
+	let doubled = $derived(count * 2);
+
+	// Anything read inside is a dependency
+	let status = $derived(count > 10 ? 'high' : 'low');
+</script>
+
+<p>{count} doubled is {doubled}</p>
+```
+
+**`$derived.by()` - For Complex Logic**
+
+Use when you need multi-line logic or loops:
+
+```svelte
+<script>
+	let numbers = $state([1, 2, 3]);
+
+	let total = $derived.by(() => {
+		let sum = 0;
+		for (const n of numbers) {
+			sum += n;
+		}
+		return sum;
+	});
+
+	let stats = $derived.by(() => {
+		const sum = numbers.reduce((a, b) => a + b, 0);
+		return {
+			sum,
+			avg: sum / numbers.length,
+			max: Math.max(...numbers)
+		};
+	});
+</script>
+
+<button onclick={() => numbers.push(numbers.length + 1)}>
+	{numbers.join(' + ')} = {total}
+</button>
+```
+
+**Overridable Deriveds (Svelte 5.25+)**
+
+Can temporarily override derived values (great for optimistic UI):
+
+```svelte
+<script>
+	let { post } = $props();
+
+	// Derived from server data, but can be overridden
+	let likes = $derived(post.likes);
+
+	async function like() {
+		likes += 1; // Override immediately for instant feedback
+
+		try {
+			await saveLike(post.id);
+		} catch {
+			likes -= 1; // Roll back on error
+		}
+		// Will sync back to post.likes when server updates
+	}
+</script>
+```
+
+**Destructuring with $derived**
+
+All destructured variables become reactive:
+
+```svelte
+<script>
+	let { a, b, c } = $derived(complexCalculation());
+	// Equivalent to:
+	// let a = $derived(complexCalculation().a);
+	// let b = $derived(complexCalculation().b);
+	// let c = $derived(complexCalculation().c);
+</script>
+```
+
+**Rules**:
+
+- Keep PURE (no side effects like `count++`)
+- Use `$derived.by()` for multi-line/loops
+- Can reassign for optimistic UI (unless `const`)
+- Anything read synchronously is a dependency
+- Updates use "push-pull" - notified immediately, computed lazily
+- Skips downstream updates if value unchanged (referential equality)
+
+### `$effect` - Side Effects
+
+```svelte
+<script>
+	let count = $state(0);
+
+	$effect(() => {
+		console.log(`Count: ${count}`);
+		document.title = `Count: ${count}`;
+
+		return () => console.log('Cleanup'); // Optional cleanup
+	});
+</script>
+```
+
+**Rules**: Use for DOM, logging, analytics | NOT for state sync | Return cleanup when needed | `$effect.pre()` for pre-DOM ops
+
+### `$props` - Component Props
+
+```svelte
+<script>
+	let {
+		title, // Required
+		count = 0, // Default value
+		onUpdate, // Callback
+		...rest // Rest props
+	} = $props();
+</script>
+```
+
+**Rules**: DON'T mutate props | Use callbacks for parent communication | `$bindable()` for two-way (rare)
+
+---
+
+## 📦 Svelte 5 Advanced Features
+
+### `{#snippet ...}` - Reusable Markup
+
+Create reusable chunks of markup instead of duplicating code:
+
+```svelte
+<script>
+	let images = $state([
+		{ src: '/img1.jpg', caption: 'Image 1', href: '/gallery/1' },
+		{ src: '/img2.jpg', caption: 'Image 2' }
+	]);
+</script>
+
+{#snippet figure(image)}
+	<figure>
+		<img src={image.src} alt={image.caption} />
+		<figcaption>{image.caption}</figcaption>
+	</figure>
+{/snippet}
+
+{#each images as image}
+	{#if image.href}
+		<a href={image.href}>
+			{@render figure(image)}
+		</a>
+	{:else}
+		{@render figure(image)}
+	{/if}
+{/each}
+```
+
+**Rules**:
+
+- Snippets can reference themselves (recursion)
+- Can have default parameters: `{#snippet hello(name = 'world')}`
+- Pass as props: `<Component {snippet} />` or implicitly inside component tags
+- Content inside component tags becomes `children` snippet automatically
+
+### `<svelte:boundary>` - Error & Loading Boundaries
+
+Handle errors and loading states (added in Svelte 5.3.0):
+
+```svelte
+<svelte:boundary>
+	<p>{await fetchData()}</p>
+
+	{#snippet pending()}
+		<p>Loading...</p>
+	{/snippet}
+
+	{#snippet failed(error, reset)}
+		<p>Error: {error.message}</p>
+		<button onclick={reset}>Try again</button>
+	{/snippet}
+</svelte:boundary>
+```
+
+**When to use**:
+
+- **`pending` snippet**: Shows while await expressions are resolving (only on first load)
+- **`failed` snippet**: Shows when errors occur, provides `error` and `reset` function
+- **`onerror` function**: Track errors to reporting service or handle outside boundary
+
+**Rules**:
+
+- Boundaries catch rendering and effect errors, NOT event handler errors
+- `pending` snippet only shows on initial load (use `$effect.pending()` for subsequent updates)
+- Errors in `onerror` bubble to parent boundary
+
+```svelte
+<script>
+	let error = $state(null);
+	let reset = $state(() => {});
+
+	function onerror(e, r) {
+		error = e;
+		reset = r;
+		trackError(e); // Send to error service
+	}
+</script>
+
+<svelte:boundary {onerror}><FlakyComponent /></svelte:boundary>
+
+{#if error}
+	<div class="error-banner">
+		{error.message}
+		<button onclick={reset}>Retry</button>
+	</div>
+{/if}
+```
+
+### `{@render ...}` - Render Snippets
+
+Render snippets created with `{#snippet}`:
+
+```svelte
+{#snippet greeting(name)}
+	<h1>Hello {name}!</h1>
+{/snippet}
+
+{@render greeting('Alice')}
+{@render greeting('Bob')}
+```
+
+**With optional snippets**:
+
+```svelte
+<script>
+	let { header, children } = $props();
+</script>
+
+{@render header?.()}
+
+{#if children}
+	{@render children()}
+{:else}
+	<p>No content provided</p>
+{/if}
+```
+
+### `{@attach ...}` - Element Attachments
+
+Run functions when an element is mounted (modern alternative to `use:` actions):
+
+```svelte
+<script>
+	function setupChart(node) {
+		// Initialize chart library
+		const chart = new Chart(node, { type: 'bar', data: chartData });
+
+		// Cleanup function
+		return () => {
+			chart.destroy();
+		};
+	}
+
+	function logMount(node) {
+		console.log('Element mounted:', node);
+		return () => console.log('Element unmounted:', node);
+	}
+</script>
+
+<canvas {@attach setupChart}></canvas><div {@attach logMount}>Content</div>
+```
+
+**Rules**:
+
+- Return a cleanup function that runs on unmount or before re-run
+- Useful for integrating third-party libraries
+- Similar to `use:` directive but newer syntax
+- Can access and modify the DOM node directly
+
+**Common use cases**:
+
+- Initialize third-party libraries (charts, maps, editors)
+- Set up DOM event listeners
+- Manage focus or scroll position
+- Integrate with non-Svelte code
+
+---
+
+## 🔄 SvelteKit Patterns
+
+### State Management Hierarchy
+
+1. **Component State**: `let isOpen = $state(false)` - Most common
+2. **Context**: `setContext('key', value)` / `getContext('key')` - Component tree
+3. **URL State**: `page.url.searchParams` - Shareable state
+4. **Server State**: Load functions - Server data
+
+### Load Functions
+
+```typescript
+// +page.ts or +page.server.ts
+export async function load({ fetch, params }) {
+	const data = await fetch(`/api/posts/${params.id}`).then((r) => r.json());
+	return { data };
+}
+```
+
+```svelte
+<script>
+	let { data } = $props();
+</script>
+```
+
+**Critical**: NEVER share state on server | Keep load functions PURE
+
+### Remote Functions (4 Types)
+
+```typescript
+// query - Read data
+export const getPosts = query(async () => {
+	return await db.posts.findMany();
+});
+
+// form - Handle submissions
+export const login = form(async (event, formData) => {
+	const email = formData.get('email');
+	return { success: true };
+});
+
+// command - Mutations
+export const createPost = command(async (event, title: string) => {
+	return await db.posts.create({ data: { title } });
+});
+
+// prerender - Build-time data
+export const getPost = prerender(async (slug: string) => {
+	return await db.posts.findUnique({ where: { slug } });
+});
+```
+
+---
+
+## 🎨 Runed Utilities (Most Used)
+
+```svelte
+<script>
+	import {
+		useSearchParams, // URL params reactivity
+		PersistedState, // localStorage
+		StateHistory, // Undo/redo
+		Context, // Type-safe context
+		activeElement, // Track focus
+		ScrollState, // Scroll tracking
+		useEventListener // Declarative events
+	} from 'runed';
+
+	// Examples
+	const theme = new PersistedState('theme', 'light');
+	const history = new StateHistory('');
+	const searchParams = useSearchParams();
+
+	useEventListener(window, 'resize', () => console.log('Resized'));
+</script>
+```
+
+**When to use**: Common reactive patterns, URL/storage state, DOM utilities
+**When NOT to use**: Simple `$state` suffices, poor architecture crutch
+
+---
+
+## ⚠️ Neverthrow (Error Handling)
+
+```typescript
+import { ok, err, Result } from 'neverthrow';
+
+// Define function returning Result
+function divide(a: number, b: number): Result<number, string> {
+	if (b === 0) return err('Cannot divide by zero');
+	return ok(a / b);
+}
+
+// Use with pattern matching
+divide(10, 2).match({
+	ok: (value) => console.log('Success:', value),
+	err: (error) => console.error('Error:', error)
+});
+
+// Chain operations
+divide(10, 2)
+	.map((n) => n * 2)
+	.mapErr((e) => `Error: ${e}`)
+	.andThen((n) => (n > 20 ? ok(n) : err('Too small')));
+
+// Async
+const userResult = ResultAsync.fromPromise(
+	fetch('/api/users/1').then((r) => r.json()),
+	(error) => new Error('Fetch failed')
+);
+```
+
+**When to use**: Predictable failures, validation, API calls, DB queries
+**When NOT to use**: Unexpected errors (use try-catch), simple booleans, everywhere (adds complexity)
+
+---
+
+## 🗄️ Convex Database
+
+### Setup
+
+```bash
+bun add convex convex-svelte
+bunx convex init
+```
+
+### Schema
+
+```typescript
+// convex/schema.ts
+import { defineSchema, defineTable } from 'convex/server';
+import { v } from 'convex/values';
+
+export default defineSchema({
+	posts: defineTable({
+		title: v.string(),
+		content: v.string(),
+		authorId: v.id('users'),
+		published: v.boolean(),
+		createdAt: v.number()
+	})
+		.index('by_author', ['authorId'])
+		.index('by_published', ['published', 'createdAt'])
+});
+```
+
+### Queries & Mutations
+
+```typescript
+// convex/posts.ts
+import { query, mutation } from './_generated/server';
+import { v } from 'convex/values';
+
+export const list = query({
+	args: {},
+	handler: async (ctx) => {
+		return await ctx.db
+			.query('posts')
+			.filter((q) => q.eq(q.field('published'), true))
+			.order('desc')
+			.take(10);
+	}
+});
+
+export const create = mutation({
+	args: { title: v.string(), content: v.string() },
+	handler: async (ctx, args) => {
+		return await ctx.db.insert('posts', {
+			...args,
+			published: false,
+			createdAt: Date.now()
+		});
+	}
+});
+
+// Use indexes for performance
+export const byAuthor = query({
+	args: { authorId: v.id('users') },
+	handler: async (ctx, args) => {
+		return await ctx.db
+			.query('posts')
+			.withIndex('by_author', (q) => q.eq('authorId', args.authorId))
+			.collect();
+	}
+});
+```
+
+### Using in Components
+
+```svelte
+<script>
+	import { useQuery, useMutation } from 'convex-svelte';
+	import { api } from '../convex/_generated/api';
+
+	const posts = useQuery(api.posts.list, {});
+	const createPost = useMutation(api.posts.create);
+
+	let title = $state('');
+	let content = $state('');
+
+	async function handleSubmit() {
+		await createPost({ title, content });
+		title = '';
+		content = '';
+	}
+</script>
+
+{#if $posts === undefined}
+	<p>Loading...</p>
+{:else if $posts.length === 0}
+	<p>No posts yet</p>
+{:else}
+	<ul>
+		{#each $posts as post}
+			<li>{post.title}</li>
+		{/each}
+	</ul>
+{/if}
+```
+
+**Best Practices**:
+
+- Always add indexes (Convex warns you)
+- Use `.paginate()` for large datasets
+- All mutations are transactional
+- Embrace real-time - queries auto-update
+- Import from `_generated/` for types
+
+---
+
+## 🔐 Better Auth
+
+### Setup
+
+```bash
+bun add better-auth
+```
+
+### Configuration
+
+```typescript
+// src/lib/auth.ts
+import { betterAuth } from 'better-auth';
+import { convexAdapter } from 'better-auth/adapters/convex';
+
+export const auth = betterAuth({
+	database: convexAdapter({
+		deploymentUrl: process.env.CONVEX_URL!
+	}),
+	emailAndPassword: { enabled: true },
+	socialProviders: {
+		github: {
+			clientId: process.env.GITHUB_CLIENT_ID!,
+			clientSecret: process.env.GITHUB_CLIENT_SECRET!
+		}
+	},
+	session: {
+		expiresIn: 60 * 60 * 24 * 7 // 7 days
+	}
+});
+```
+
+### Integration
+
+```typescript
+// src/hooks.server.ts
+export const handle: Handle = async ({ event, resolve }) => {
+	const session = await auth.getSession(event.request);
+	event.locals.session = session;
+	event.locals.user = session?.user;
+	return resolve(event);
+};
+
+// src/routes/auth/[...all]/+server.ts
+export const GET = auth.handler;
+export const POST = auth.handler;
+```
+
+### Client Usage
+
+```typescript
+// src/lib/auth.client.ts
+import { createAuthClient } from 'better-auth/client';
+export const authClient = createAuthClient({
+	baseURL: 'http://localhost:5173'
+});
+```
+
+```svelte
+<script>
+	import { authClient } from '$lib/auth.client';
+
+	let email = $state('');
+	let password = $state('');
+
+	async function signIn() {
+		await authClient.signIn.email({ email, password });
+	}
+
+	async function signInWithGithub() {
+		await authClient.signIn.social({ provider: 'github' });
+	}
+</script>
+```
+
+### Protected Routes
+
+```typescript
+// +layout.server.ts
+export const load: LayoutServerLoad = async ({ locals, url }) => {
+	if (!locals.user) {
+		redirect(303, `/auth/sign-in?redirect=${url.pathname}`);
+	}
+	return { user: locals.user };
+};
+```
+
+### With Convex
+
+```typescript
+// convex/posts.ts
+export const myPosts = query({
+	handler: async (ctx) => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) throw new Error('Not authenticated');
+
+		return await ctx.db
+			.query('posts')
+			.withIndex('by_author', (q) => q.eq('authorId', identity.subject))
+			.collect();
+	}
+});
+```
+
+---
+
+## 🚨 Common Pitfalls
+
+### ❌ Destructuring Reactive State
+
+```svelte
+let user = $state({ name: 'Alice' });
+let { name } = user; // BREAKS REACTIVITY!
+
+// ✅ Use:
+const name = $derived(user.name);
+```
+
+### ❌ Side Effects in $derived
+
+```svelte
+let doubled = $derived(() => {
+  console.log(count); // NO! Side effect
+  return count * 2;
+});
+
+let total = $derived.by(() => {
+  count++; // NO! State mutation
+  return count * 2;
+});
+
+// ✅ Use:
+let doubled = $derived(count * 2);
+$effect(() => console.log(count)); // Side effects in $effect
+```
+
+### ❌ Using $derived Instead of $derived.by
+
+```svelte
+// ❌ Trying to fit complex logic in one expression
+let result = $derived(
+  numbers.length > 0
+    ? numbers.reduce((sum, n) => sum + n, 0) / numbers.length
+    : 0
+);
+
+// ✅ Use $derived.by for readability
+let result = $derived.by(() => {
+  if (numbers.length === 0) return 0;
+  const sum = numbers.reduce((acc, n) => acc + n, 0);
+  return sum / numbers.length;
+});
+```
+
+### ❌ Not Understanding Push-Pull
+
+```svelte
+<script>
+	let count = $state(0);
+	let large = $derived(count > 10);
+
+	// This button only updates when `large` changes
+	// Not every time count changes!
+</script>
+
+<button onclick={() => count++}>
+	{large}
+	<!-- Only re-renders when large flips true/false -->
+</button>
+```
+
+### ❌ Shared Server State
+
+```typescript
+let cachedUser: User; // LEAKS DATA BETWEEN USERS!
+
+// ✅ Use locals or database, never global
+```
+
+### ❌ Missing Convex Loading State
+
+```svelte
+{#each $posts as post}
+	// Crashes if undefined
+	<li>{post.title}</li>
+{/each}
+
+// ✅ Always check:
+{#if $posts === undefined}
+	Loading...
+{:else}
+	{#each $posts as post}...{/each}
+{/if}
+```
+
+### ❌ Forgetting Indexes
+
+```typescript
+.filter(q => q.eq(q.field('authorId'), authorId)) // SLOW!
+
+// ✅ Use indexes:
+.withIndex('by_author', q => q.eq('authorId', authorId))
+```
+
+### ❌ Using npm
+
+```bash
+npm install package-name  # WRONG!
+bun add package-name      # CORRECT!
+```
+
+### ❌ Forgetting Snippet Cleanup
+
+```svelte
+{#snippet modal()}
+	<div class="modal">
+		<!-- NO cleanup for event listeners or subscriptions -->
+	</div>
+{/snippet}
+
+// ✅ Use $effect inside snippet or component for cleanup
+{#snippet modal()}
+	<div class="modal">
+		<script>
+			$effect(() => {
+				const handler = (e) => {
+					/* ... */
+				};
+				window.addEventListener('keydown', handler);
+				return () => window.removeEventListener('keydown', handler);
+			});
+		</script>
+	</div>
+{/snippet}
+```
+
+### ❌ Not Handling Boundary Loading States
+
+```svelte
+<svelte:boundary>
+	{await fetchData()}
+	<!-- Crashes without pending snippet -->
+</svelte:boundary>
+
+// ✅ Always provide pending snippet for await
+<svelte:boundary>
+	{await fetchData()}
+	{#snippet pending()}
+		<p>Loading...</p>
+	{/snippet}
+</svelte:boundary>
+```
+
+### ❌ Using @attach Without Cleanup
+
+```svelte
+<div {@attach (node) => {
+	node.addEventListener('click', handler); // Memory leak!
+}}>
+
+// ✅ Always return cleanup function
+<div {@attach (node) => {
+	node.addEventListener('click', handler);
+	return () => node.removeEventListener('click', handler);
+}}>
+```
+
+---
+
+## 📋 Quick Checklist
+
+### New Feature
+
+- [ ] Define Convex schema with indexes
+- [ ] Create queries/mutations
+- [ ] Use `$state`/`$derived`/`$effect` properly
+- [ ] Handle loading states (`$posts === undefined`)
+- [ ] Add auth checks on server side
+- [ ] Test real-time updates
+- [ ] Use Bun commands only
+
+### Code Review
+
+- [ ] `$state` not `let` for reactive values
+- [ ] `$derived` not `$:` for computed
+- [ ] `$derived.by()` for multi-line/complex logic
+- [ ] No side effects in `$derived` (use `$effect`)
+- [ ] `$effect` not `$:` for side effects
+- [ ] `$props()` not `export let`
+- [ ] `onclick` not `on:click`
+- [ ] No shared server state
+- [ ] Pure load functions
+- [ ] Server-side auth checks
+- [ ] Proper error handling
+- [ ] TypeScript types
+- [ ] Convex indexes exist
+- [ ] Snippets used for repeated markup
+- [ ] `<svelte:boundary>` for async/error handling
+- [ ] `{@attach}` returns cleanup functions
+
+---
+
+## 💡 Core Principles
+
+1. **Embrace Reactivity**: Don't fight Svelte's reactivity system
+2. **Trust Types**: Full TypeScript from DB to UI
+3. **Start Simple**: Add complexity only when needed
+4. **Use Right Tools**: Each has a specific purpose
+5. **Clear Boundaries**: Server vs client state separation
+
+**When to use what**:
+
+- **$state**: Component-local reactive data
+- **$derived**: Single-line computed values (`let doubled = $derived(count * 2)`)
+- **$derived.by**: Multi-line logic, loops, complex calculations
+- **$effect**: Side effects (DOM, logging, analytics, subscriptions)
+- **Snippets**: Reusable markup patterns
+- **<svelte:boundary>**: Error handling and async loading states
+- **{@attach}**: Third-party library integration
+- **Runed**: Common patterns (URL state, storage, DOM utils)
+- **Neverthrow**: Predictable error handling
+- **Convex**: All backend data and logic
+- **Better Auth**: Authentication flows
