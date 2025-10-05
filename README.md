@@ -56,7 +56,7 @@ If you want to use the real-time database:
 bun add convex convex-svelte
 
 # Initialize Convex (creates convex/ directory)
-bunx convex init
+bunx convex dev --once --configure=new
 
 # Start Convex dev server (in a separate terminal)
 bunx convex dev
