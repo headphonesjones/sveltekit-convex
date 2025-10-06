@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { PersistedState } from 'runed';
 	import { err, ok, type Result } from 'neverthrow';
+	import TiptapEditor from '$lib/components/TiptapEditor.svelte';
 	
 	const convex = useConvexClient();
 	
@@ -213,13 +214,12 @@
 		
 		<div class="form-group">
 			<label for="content">Content *</label>
-			<textarea
-				id="content"
-				bind:value={content}
-				placeholder="Write your post content here (HTML supported)"
-				rows="20"
-			></textarea>
-			<span class="hint">HTML is supported. Markdown will need additional processing.</span>
+			<TiptapEditor 
+				bind:content={content}
+				placeholder="Write your post content here..."
+				minHeight="400px"
+			/>
+			<span class="hint">Use the toolbar to format your content. HTML is generated automatically.</span>
 		</div>
 		
 		<div class="form-actions">
@@ -320,7 +320,6 @@
 	
 	textarea {
 		resize: vertical;
-		font-family: 'Monaco', 'Courier New', monospace;
 		line-height: 1.6;
 	}
 	
