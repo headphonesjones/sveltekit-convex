@@ -1,39 +1,58 @@
 <script lang="ts">
-	import { authClient } from '$lib/auth-client';
+	import { signOut } from '$lib/auth-client';
+	import { useQuery, useConvexClient } from 'convex-svelte';
+	import { api } from '../../convex/_generated/api';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
+	import { browser } from '$app/environment';
 
 	let { children } = $props();
 
-	// Get auth state
-	const auth = useAuth();
-	const session = authClient.useSession();
-	const isAuthenticated = $derived(auth.isAuthenticated);
+	const convex = useConvexClient();
 
-	let currentPath = $state('');
+	// Get session ID from localStorage
+	const sessionId = $state(
+		browser ? localStorage.getItem('convex-auth-session-id') : null
+	);
 
-	// Track current path
+	// Check authentication status using the session ID
+	const isAuthQuery = useQuery(api.users.isAuthenticated, { sessionId });
+
+	// Track current path for redirects
+	const currentPath = $derived($page.url.pathname);
+
+	// Debug logging
 	$effect(() => {
-		currentPath = $page.url.pathname;
+		console.log('[Admin Layout] Auth query state:', {
+			data: isAuthQuery.data,
+			isLoading: isAuthQuery.isLoading,
+			error: isAuthQuery.error
+		});
 	});
 
 	// Redirect if not authenticated
 	$effect(() => {
-		if (!auth.isLoading && !isAuthenticated && currentPath) {
+		if (isAuthQuery.data === false) {
+			console.log('[Admin Layout] Not authenticated, redirecting to sign-in');
 			goto(`/auth/sign-in?redirect=${currentPath}`);
+		} else if (isAuthQuery.data === true) {
+			console.log('[Admin Layout] User is authenticated');
 		}
 	});
 
 	async function handleSignOut() {
-		await authClient.signOut();
+		await signOut(convex);
 		goto('/auth/sign-in');
 	}
 </script>
 
-{#if auth.isLoading}
+{#if isAuthQuery.data === undefined}
 	<div class="loading-container">
 		<p>Loading...</p>
+	</div>
+{:else if isAuthQuery.data === false}
+	<div class="loading-container">
+		<p>Redirecting to login...</p>
 	</div>
 {:else}
 	<div class="admin-layout">
@@ -43,12 +62,9 @@
 				<a href="/admin/new">New Post</a>
 				<a href="/blog">View Blog</a>
 			</nav>
-			{#if isAuthenticated && $session.data?.user}
-				<div class="user-info">
-					<span>Logged in as {$session.data.user.name || $session.data.user.email}</span>
-					<button onclick={handleSignOut} class="sign-out-btn">Sign Out</button>
-				</div>
-			{/if}
+			<div class="user-info">
+				<button onclick={handleSignOut} class="sign-out-btn">Sign Out</button>
+			</div>
 		</header>
 
 		{@render children()}
@@ -98,11 +114,6 @@
 		display: flex;
 		align-items: center;
 		gap: 1rem;
-	}
-
-	.user-info span {
-		font-size: 0.875rem;
-		color: #6b7280;
 	}
 
 	.sign-out-btn {

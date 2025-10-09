@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { authClient } from '$lib/auth-client';
+	import { signUp } from '$lib/auth-client';
+	import { useConvexClient } from 'convex-svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 
-	let name = $state('');
+	const convex = useConvexClient();
+
 	let email = $state('');
 	let password = $state('');
 	let confirmPassword = $state('');
@@ -32,23 +34,15 @@
 		loading = true;
 
 		try {
-			const result = await authClient.signUp.email({
-				email,
-				password,
-				name
-			});
-
-			if (result.error) {
-				error = result.error.message || 'Sign up failed';
-			} else {
-				// Wait for auth state to update before redirecting
-				// Give it a bit more time to ensure session is fully established
-				await new Promise((resolve) => setTimeout(resolve, 300));
-				// Redirect after successful sign up
+			const result = await signUp(convex, email, password);
+			if (result.success) {
+				// Navigate to the protected route
 				goto(redirectUrl);
+			} else {
+				error = result.error || 'Sign up failed';
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'An error occurred';
+			error = e instanceof Error ? e.message : 'Sign up failed';
 		} finally {
 			loading = false;
 		}
@@ -60,18 +54,6 @@
 		<h1>Create Account</h1>
 
 		<form onsubmit={handleSignUp}>
-			<div class="form-group">
-				<label for="name">Name</label>
-				<input
-					id="name"
-					type="text"
-					bind:value={name}
-					placeholder="Your name"
-					required
-					disabled={loading}
-				/>
-			</div>
-
 			<div class="form-group">
 				<label for="email">Email</label>
 				<input

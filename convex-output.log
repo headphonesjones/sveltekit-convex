@@ -1,0 +1,36 @@
+- Preparing Convex functions...
+
+[36mA patch update is available for Convex[39m [2m(1.27.3 → 1.27.5)[22m
+[2mChangelog:[22m [4mhttps://github.com/get-convex/convex-js/blob/main/CHANGELOG.md#changelog[24m
+✔ 15:29:20 Convex functions ready! (4.42s)
+- Preparing Convex functions...
+
+✘ [ERROR] Could not resolve "@convex-dev/better-auth/convex.config"
+
+    src/convex/convex.config.ts:2:23:
+      2 │ import betterAuth from '@convex-dev/better-auth/convex.config';
+        ╵                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@convex-dev/better-auth/convex.config" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✖ esbuild failed: Error: Build failed with 1 error:
+src/convex/convex.config.ts:2:23: ERROR: Could not resolve "@convex-dev/better-auth/convex.config"
+- Preparing Convex functions...
+
+✘ [ERROR] Could not resolve "@convex-dev/better-auth/convex.config"
+
+    src/convex/convex.config.ts:2:23:
+      2 │ import betterAuth from '@convex-dev/better-auth/convex.config';
+        ╵                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@convex-dev/better-auth/convex.config" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✖ esbuild failed: Error: Build failed with 1 error:
+src/convex/convex.config.ts:2:23: ERROR: Could not resolve "@convex-dev/better-auth/convex.config"
+- Preparing Convex functions...
+
+Temporary directory '/tmp' and project directory '/run/media/jj/EXTSSD/GitHub/sveltekit-convex/src/convex/_generated' are on different filesystems.
+  If you're running into errors with other tools watching the project directory, override the temporary directory location with the CONVEX_TMPDIR environment variable.
+  Be sure to pick a temporary directory that's on the same filesystem as your project.
+✔ Unmounted component betterAuth.
+✔ 15:32:45 Convex functions ready! (1.93s)

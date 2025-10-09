@@ -1,7 +1,10 @@
 <script lang="ts">
-	import { authClient } from '$lib/auth-client';
+	import { signIn } from '$lib/auth-client';
+	import { useConvexClient } from 'convex-svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
+
+	const convex = useConvexClient();
 
 	let email = $state('');
 	let password = $state('');
@@ -17,22 +20,21 @@
 		loading = true;
 
 		try {
-			const result = await authClient.signIn.email({
-				email,
-				password
-			});
-
-			if (result.error) {
-				error = result.error.message || 'Sign in failed';
-			} else {
-				// Wait for auth state to update before redirecting
-				// Give it a bit more time to ensure session is fully established
-				await new Promise((resolve) => setTimeout(resolve, 300));
-				// Redirect after successful sign in
+			console.log('Starting sign in...');
+			const result = await signIn(convex, email, password);
+			console.log('Sign in result:', result);
+			
+			if (result.success) {
+				console.log('Sign in successful, redirecting...');
+				// Navigate to the protected route
 				goto(redirectUrl);
+			} else {
+				console.error('Sign in failed:', result.error);
+				error = result.error || 'Sign in failed';
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'An error occurred';
+			console.error('Sign in error:', e);
+			error = e instanceof Error ? e.message : 'Sign in failed';
 		} finally {
 			loading = false;
 		}
