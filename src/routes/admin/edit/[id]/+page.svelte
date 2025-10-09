@@ -186,7 +186,7 @@
 					type="text"
 					bind:value={slug}
 					placeholder="url-friendly-slug"
-					pattern="[a-z0-9-]+"
+					pattern="[a-z0-9\-]+"
 				/>
 				<span class="hint">URL: /blog/{slug || 'your-slug'}</span>
 			</div>

@@ -7,7 +7,7 @@ A modern, type-safe, full-stack starter template for building real-time web appl
 - ⚡️ **[SvelteKit](https://svelte.dev/docs/kit)** - Modern full-stack framework with SSR, routing, and API routes
 - 🎨 **[Svelte 5](https://svelte.dev)** - Revolutionary reactivity with runes (`$state`, `$derived`, `$effect`)
 - 🗄️ **[Convex](https://convex.dev)** - Real-time database with automatic sync and type-safe queries
-- 🔐 **[Better Auth](https://better-auth.com)** - Flexible authentication (optional, add when needed)
+- 🔐 **[Convex Auth](https://labs.convex.dev/auth)** - Built-in authentication with password, OAuth, magic links, and OTPs
 - 🛠️ **[Runed](https://runed.dev)** - Powerful Svelte 5 utility library
 - ⚠️ **[Neverthrow](https://github.com/supermacro/neverthrow)** - Functional error handling with Result types
 - 📦 **[Bun](https://bun.sh)** - Fast JavaScript runtime and package manager
@@ -62,25 +62,41 @@ bunx convex dev --once --configure=new
 bunx convex dev
 ```
 
-## 🔐 Setup Authentication (Optional)
+## 🔐 Setup Authentication
 
-If you need authentication:
+Authentication is already configured with Convex Auth:
 
 ```bash
-# Install Better Auth
-bun add better-auth
+# Already installed with convex-svelte
+# Configuration files:
+# - src/convex/auth.ts (auth setup)
+# - src/convex/http.ts (auth routes)
+# - src/lib/auth-client.ts (client helpers)
 
-# Follow the setup guide in .cursor/rules/001_quick_reference.mdc
+# Key features:
+# ✅ Email + password authentication
+# ✅ Session-based auth (works with SvelteKit)
+# ✅ Protected routes
+# ✅ Sign in/sign up forms included
 ```
+
+See `src/routes/auth/` for the authentication UI.
 
 ## 📁 Project Structure
 
 ```
 ├── src/
 │   ├── routes/          # SvelteKit routes (pages & API endpoints)
+│   │   ├── auth/        # Authentication pages (sign-in, sign-up)
+│   │   └── admin/       # Protected admin pages
 │   ├── lib/             # Shared components and utilities
+│   │   └── auth-client.ts  # Auth helper functions
 │   └── app.html         # HTML template
 ├── convex/              # Convex backend (schemas, queries, mutations)
+│   ├── auth.ts          # Convex Auth configuration
+│   ├── http.ts          # HTTP routes (auth endpoints)
+│   ├── users.ts         # User queries (authentication checks)
+│   └── schema.ts        # Database schema (includes authTables)
 ├── static/              # Static assets
 ├── .cursor/
 │   └── rules/           # Comprehensive documentation for AI assistants
@@ -161,12 +177,30 @@ This starter comes with comprehensive documentation optimized for AI assistants 
 {/if}
 ```
 
+#### Authentication with Convex Auth
+
+```svelte
+<script>
+	import { signIn, signUp, signOut } from '$lib/auth-client';
+	import { useConvexClient } from 'convex-svelte';
+
+	const convex = useConvexClient();
+
+	async function handleSignIn() {
+		const result = await signIn(convex, email, password);
+		if (result.success) {
+			// User is signed in!
+		}
+	}
+</script>
+```
+
 ## 🎓 Learn More
 
 - [SvelteKit Documentation](https://svelte.dev/docs/kit)
 - [Svelte 5 Documentation](https://svelte.dev/docs/svelte/overview)
 - [Convex Documentation](https://docs.convex.dev)
-- [Better Auth Documentation](https://better-auth.com/docs)
+- [Convex Auth Documentation](https://labs.convex.dev/auth)
 - [Runed Documentation](https://runed.dev/docs)
 - [Bun Documentation](https://bun.sh/docs)
 

@@ -226,23 +226,40 @@ export const remove = mutation({
 
 ---
 
-## 4. Route Protection (Better Auth)
+## 4. Route Protection (Convex Auth)
 
-```typescript
-// src/routes/todos/+layout.server.ts
-import { redirect } from '@sveltejs/kit';
-import type { LayoutServerLoad } from './$types';
+```svelte
+<!-- src/routes/todos/+layout.svelte -->
+<script>
+	import { useQuery } from 'convex-svelte';
+	import { api } from '../../convex/_generated/api';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
 
-export const load: LayoutServerLoad = async ({ locals, url }) => {
-	// Require authentication
-	if (!locals.user) {
-		redirect(303, `/auth/sign-in?redirect=${url.pathname}`);
-	}
+	let { children } = $props();
 
-	return {
-		user: locals.user
-	};
-};
+	// Get session ID from localStorage
+	const sessionId = $state(
+		browser ? localStorage.getItem('convex-auth-session-id') : null
+	);
+
+	// Check authentication status
+	const isAuthQuery = useQuery(api.users.isAuthenticated, { sessionId });
+
+	// Redirect if not authenticated
+	$effect(() => {
+		if (isAuthQuery.data === false) {
+			goto(`/auth/sign-in?redirect=${$page.url.pathname}`);
+		}
+	});
+</script>
+
+{#if isAuthQuery.data === undefined}
+	<p>Loading...</p>
+{:else if isAuthQuery.data}
+	{@render children()}
+{/if}
 ```
 
 ---
@@ -269,11 +286,12 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 - **Indexes**: `by_user` index for efficient queries
 - **Auth**: Integrated with `ctx.auth.getUserIdentity()`
 
-### ✅ Better Auth
+### ✅ Convex Auth
 
-- **Route Protection**: Server-side check in `+layout.server.ts`
-- **User Context**: Available in `locals.user`
+- **Route Protection**: Client-side check with session validation
+- **Session Storage**: Session ID stored in localStorage
 - **Redirect**: Sends to sign-in with return URL
+- **Real-time**: Auth state updates automatically via queries
 
 ### ✅ Error Handling
 

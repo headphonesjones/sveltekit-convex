@@ -19,7 +19,7 @@ alwaysApply: true
 
 **Philosophy**: Modern, type-safe, full-stack template for rapid development with real-time capabilities.
 
-**Stack**: SvelteKit + Svelte 5 + Convex + Better Auth + Runed + Neverthrow + Bun
+**Stack**: SvelteKit + Svelte 5 + Convex + Convex Auth + Runed + Neverthrow + Bun
 
 ---
 
@@ -568,109 +568,194 @@ export const byAuthor = query({
 
 ---
 
-## 🔐 Better Auth
+## 🔐 Convex Auth
 
 ### Setup
 
 ```bash
-bun add better-auth
+# Already included with @convex-dev/auth
+bun add @convex-dev/auth
 ```
 
-### Configuration
+### Backend Configuration
 
 ```typescript
-// src/lib/auth.ts
-import { betterAuth } from 'better-auth';
-import { convexAdapter } from 'better-auth/adapters/convex';
+// convex/auth.ts
+import { convexAuth } from '@convex-dev/auth/server';
+import { Password } from '@convex-dev/auth/providers/Password';
 
-export const auth = betterAuth({
-	database: convexAdapter({
-		deploymentUrl: process.env.CONVEX_URL!
-	}),
-	emailAndPassword: { enabled: true },
-	socialProviders: {
-		github: {
-			clientId: process.env.GITHUB_CLIENT_ID!,
-			clientSecret: process.env.GITHUB_CLIENT_SECRET!
+export const { auth, signIn, signOut, store } = convexAuth({
+	providers: [Password]
+});
+```
+
+```typescript
+// convex/http.ts
+import { httpRouter } from 'convex/server';
+import { auth } from './auth';
+
+const http = httpRouter();
+auth.addHttpRoutes(http);
+
+export default http;
+```
+
+```typescript
+// convex/schema.ts
+import { defineSchema, defineTable } from 'convex/server';
+import { v } from 'convex/values';
+import { authTables } from '@convex-dev/auth/server';
+
+export default defineSchema({
+	...authTables,
+	// Your other tables...
+});
+```
+
+### Client Helpers (SvelteKit)
+
+```typescript
+// src/lib/auth-client.ts
+import type { ConvexClient } from 'convex/browser';
+import { api } from '../convex/_generated/api';
+
+export async function signIn(
+	convex: ConvexClient,
+	email: string,
+	password: string
+): Promise<{ success: boolean; error?: string }> {
+	try {
+		const result = await convex.action(api.auth.signIn, {
+			provider: 'password',
+			params: { email, password, flow: 'signIn' }
+		}) as any;
+
+		if (result?.tokens) {
+			// Extract session ID from JWT
+			const token = result.tokens.token;
+			const payload = JSON.parse(atob(token.split('.')[1]));
+			const [userId, sessionId] = payload.sub.split('|');
+			
+			// Store session ID for auth checks
+			localStorage.setItem('convex-auth-session-id', sessionId);
+			localStorage.setItem('convex-auth-user-id', userId);
 		}
-	},
-	session: {
-		expiresIn: 60 * 60 * 24 * 7 // 7 days
+
+		return { success: true };
+	} catch (error) {
+		return {
+			success: false,
+			error: error instanceof Error ? error.message : 'Sign in failed'
+		};
+	}
+}
+
+export async function signOut(convex: ConvexClient): Promise<void> {
+	await convex.action(api.auth.signOut, {});
+	localStorage.removeItem('convex-auth-session-id');
+	localStorage.removeItem('convex-auth-user-id');
+}
+```
+
+### Auth Queries
+
+```typescript
+// convex/users.ts
+import { query } from './_generated/server';
+import { v } from 'convex/values';
+import { auth } from './auth';
+
+export const isAuthenticated = query({
+	args: { sessionId: v.optional(v.string()) },
+	handler: async (ctx, args) => {
+		if (!args.sessionId) {
+			const userId = await auth.getUserId(ctx);
+			return userId !== null;
+		}
+		
+		// Check if session exists and is valid
+		const session = await ctx.db
+			.query('authSessions')
+			.filter((q) => q.eq(q.field('_id'), args.sessionId))
+			.first();
+		
+		if (!session) return false;
+		
+		// Check expiration
+		const now = Date.now();
+		return !session.expirationTime || session.expirationTime > now;
 	}
 });
 ```
 
-### Integration
-
-```typescript
-// src/hooks.server.ts
-export const handle: Handle = async ({ event, resolve }) => {
-	const session = await auth.getSession(event.request);
-	event.locals.session = session;
-	event.locals.user = session?.user;
-	return resolve(event);
-};
-
-// src/routes/auth/[...all]/+server.ts
-export const GET = auth.handler;
-export const POST = auth.handler;
-```
-
-### Client Usage
-
-```typescript
-// src/lib/auth.client.ts
-import { createAuthClient } from 'better-auth/client';
-export const authClient = createAuthClient({
-	baseURL: 'http://localhost:5173'
-});
-```
+### Protected Routes (Client-Side)
 
 ```svelte
 <script>
-	import { authClient } from '$lib/auth.client';
+	import { useQuery, useConvexClient } from 'convex-svelte';
+	import { api } from '../../convex/_generated/api';
+	import { signOut } from '$lib/auth-client';
+	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 
+	const convex = useConvexClient();
+	const sessionId = $state(browser ? localStorage.getItem('convex-auth-session-id') : null);
+	const isAuthQuery = useQuery(api.users.isAuthenticated, { sessionId });
+
+	$effect(() => {
+		if (isAuthQuery.data === false) {
+			goto('/auth/sign-in');
+		}
+	});
+</script>
+
+{#if isAuthQuery.data === undefined}
+	<p>Loading...</p>
+{:else if isAuthQuery.data}
+	<!-- Protected content -->
+{/if}
+```
+
+### Sign In Form
+
+```svelte
+<script>
+	import { signIn } from '$lib/auth-client';
+	import { useConvexClient } from 'convex-svelte';
+	import { goto } from '$app/navigation';
+
+	const convex = useConvexClient();
+	
 	let email = $state('');
 	let password = $state('');
+	let error = $state('');
 
-	async function signIn() {
-		await authClient.signIn.email({ email, password });
-	}
-
-	async function signInWithGithub() {
-		await authClient.signIn.social({ provider: 'github' });
+	async function handleSignIn(e: Event) {
+		e.preventDefault();
+		const result = await signIn(convex, email, password);
+		if (result.success) {
+			goto('/admin');
+		} else {
+			error = result.error || 'Sign in failed';
+		}
 	}
 </script>
+
+<form onsubmit={handleSignIn}>
+	<input bind:value={email} type="email" placeholder="Email" />
+	<input bind:value={password} type="password" placeholder="Password" />
+	{#if error}<p class="error">{error}</p>{/if}
+	<button type="submit">Sign In</button>
+</form>
 ```
 
-### Protected Routes
+**Key Points:**
 
-```typescript
-// +layout.server.ts
-export const load: LayoutServerLoad = async ({ locals, url }) => {
-	if (!locals.user) {
-		redirect(303, `/auth/sign-in?redirect=${url.pathname}`);
-	}
-	return { user: locals.user };
-};
-```
-
-### With Convex
-
-```typescript
-// convex/posts.ts
-export const myPosts = query({
-	handler: async (ctx) => {
-		const identity = await ctx.auth.getUserIdentity();
-		if (!identity) throw new Error('Not authenticated');
-
-		return await ctx.db
-			.query('posts')
-			.withIndex('by_author', (q) => q.eq('authorId', identity.subject))
-			.collect();
-	}
-});
-```
+- Convex Auth creates sessions in the `authSessions` table
+- JWT tokens contain `userId|sessionId` in the `sub` field
+- Store session ID in localStorage for auth checks
+- Check sessions via Convex queries (works with SvelteKit)
+- OAuth, magic links, and OTPs are also supported
 
 ---
 

@@ -1,5 +1,9 @@
 <script lang="ts">
-	let { data } = $props();
+	import { useQuery } from 'convex-svelte';
+	import { api } from '../../convex/_generated/api';
+
+	// Use real-time query instead of server-side data
+	const query = useQuery(api.posts.listPublished, { limit: 20 });
 	
 	// Format dates nicely
 	function formatDate(timestamp: number) {
@@ -19,11 +23,15 @@
 <div class="blog-container">
 	<h1>Blog</h1>
 	
-	{#if data.posts.length === 0}
+	{#if query.isLoading}
+		<p class="loading-state">Loading posts...</p>
+	{:else if query.error}
+		<p class="error-state">Failed to load posts: {query.error.toString()}</p>
+	{:else if query.data && query.data.length === 0}
 		<p class="empty-state">No posts published yet. Check back soon!</p>
-	{:else}
+	{:else if query.data}
 		<div class="posts-grid">
-			{#each data.posts as post (post._id)}
+			{#each query.data as post (post._id)}
 				<article class="post-card">
 					<a href="/blog/{post.slug}">
 						<h2>{post.title}</h2>
@@ -58,6 +66,18 @@
 		font-size: 2.5rem;
 		margin-bottom: 2rem;
 		font-weight: 700;
+	}
+	
+	.loading-state {
+		color: #666;
+		text-align: center;
+		padding: 3rem;
+	}
+
+	.error-state {
+		color: #dc2626;
+		text-align: center;
+		padding: 3rem;
 	}
 	
 	.empty-state {
