@@ -1,5 +1,18 @@
 <script lang="ts">
+	import { useQuery } from 'convex-svelte';
+	import { api } from '../../../convex/_generated/api';
+
+	// Get server-rendered initial data (fast first load + SEO)
 	let { data } = $props();
+	
+	// Also subscribe to real-time updates
+	const realtimeQuery = useQuery(api.posts.getBySlug, () => ({ 
+		slug: data.slug 
+	}));
+	
+	// Use real-time data if available, fallback to server data
+	// This gives us instant SSR content + live updates after hydration
+	const post = $derived(realtimeQuery.data ?? data.post);
 	
 	function formatDate(timestamp: number) {
 		return new Date(timestamp).toLocaleDateString('en-US', {
@@ -11,38 +24,65 @@
 </script>
 
 <svelte:head>
-	<title>{data.post.title}</title>
-	<meta name="description" content={data.post.excerpt} />
+	{#if post}
+		<title>{post.title}</title>
+		<meta name="description" content={post.excerpt} />
+	{:else}
+		<title>Blog Post</title>
+	{/if}
 </svelte:head>
 
-<article class="post">
-	<header class="post-header">
+{#if !post}
+	<div class="post error">
 		<a href="/blog" class="back-link">← Back to Blog</a>
-		<h1>{data.post.title}</h1>
-		<div class="post-meta">
-			<time datetime={new Date(data.post.publishedAt || data.post.createdAt).toISOString()}>
-				{formatDate(data.post.publishedAt || data.post.createdAt)}
-			</time>
-			{#if data.post.tags && data.post.tags.length > 0}
-				<div class="tags">
-					{#each data.post.tags as tag}
-						<span class="tag">{tag}</span>
-					{/each}
-				</div>
-			{/if}
-		</div>
-	</header>
-	
-	<div class="post-content">
-		{@html data.post.content}
+		<h1>Post Not Found</h1>
+		<p>The post you're looking for doesn't exist.</p>
 	</div>
-</article>
+{:else}
+	<article class="post">
+		<header class="post-header">
+			<a href="/blog" class="back-link">← Back to Blog</a>
+			<h1>{post.title}</h1>
+			<div class="post-meta">
+				<time datetime={new Date(post.publishedAt || post.createdAt).toISOString()}>
+					{formatDate(post.publishedAt || post.createdAt)}
+				</time>
+				{#if post.tags && post.tags.length > 0}
+					<div class="tags">
+						{#each post.tags as tag}
+							<span class="tag">{tag}</span>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</header>
+		
+		<div class="post-content">
+			{@html post.content}
+		</div>
+	</article>
+{/if}
 
 <style>
 	.post {
 		max-width: 750px;
 		margin: 0 auto;
 		padding: 2rem;
+	}
+	
+	.post.loading,
+	.post.error {
+		text-align: center;
+		padding: 4rem 2rem;
+	}
+	
+	.post.error h1 {
+		color: #dc2626;
+		margin-bottom: 1rem;
+	}
+	
+	.post.error p {
+		color: #666;
 	}
 	
 	.post-header {
