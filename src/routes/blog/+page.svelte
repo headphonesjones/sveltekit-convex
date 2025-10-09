@@ -24,7 +24,31 @@
 	<h1>Blog</h1>
 	
 	{#if query.isLoading}
-		<p class="loading-state">Loading posts...</p>
+		<!-- Skeleton loading state with Tailwind -->
+		<div class="posts-grid">
+			{#each Array(3) as _, i (i)}
+				<article class="border border-gray-200 rounded-lg p-6 animate-pulse">
+					<!-- Title skeleton -->
+					<div class="h-7 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer rounded w-3/4 mb-3"></div>
+					
+					<!-- Excerpt skeleton -->
+					<div class="space-y-2 mb-4">
+						<div class="h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer rounded"></div>
+						<div class="h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer rounded"></div>
+						<div class="h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer rounded w-3/5"></div>
+					</div>
+					
+					<!-- Meta skeleton -->
+					<div class="flex items-center gap-4">
+						<div class="h-3.5 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer rounded w-32"></div>
+						<div class="flex gap-2">
+							<div class="h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer rounded-full w-16"></div>
+							<div class="h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer rounded-full w-20"></div>
+						</div>
+					</div>
+				</article>
+			{/each}
+		</div>
 	{:else if query.error}
 		<p class="error-state">Failed to load posts: {query.error.toString()}</p>
 	{:else if query.data && query.data.length === 0}
@@ -142,5 +166,19 @@
 		padding: 0.25rem 0.75rem;
 		border-radius: 12px;
 		font-size: 0.85rem;
+	}
+	
+	/* Custom shimmer animation for Tailwind */
+	@keyframes shimmer {
+		0% {
+			background-position: 200% 0;
+		}
+		100% {
+			background-position: -200% 0;
+		}
+	}
+	
+	:global(.animate-shimmer) {
+		animation: shimmer 2s infinite;
 	}
 </style>
