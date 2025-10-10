@@ -3,7 +3,8 @@
 	import { api } from '../../convex/_generated/api';
 	import { goto } from '$app/navigation';
 	
-	const query = useQuery(api.posts.listAll, {});
+	let paginationOpts = $state({ numItems: 50, cursor: null as string | null });
+	const query = useQuery(api.posts.listAll, () => ({ paginationOpts }));
 	
 	function formatDate(timestamp: number) {
 		return new Date(timestamp).toLocaleDateString('en-US', {
@@ -11,6 +12,12 @@
 			month: 'short',
 			day: 'numeric'
 		});
+	}
+	
+	function loadMore() {
+		if (query.data?.continueCursor) {
+			paginationOpts = { numItems: 50, cursor: query.data.continueCursor };
+		}
 	}
 </script>
 
@@ -31,7 +38,7 @@
 		<p class="loading">Loading posts...</p>
 	{:else if query.error}
 		<p class="error">Failed to load posts: {query.error.toString()}</p>
-	{:else if !query.data || query.data.length === 0}
+	{:else if !query.data || query.data.page.length === 0}
 		<div class="empty-state">
 			<p>No posts yet. Create your first post!</p>
 			<a href="/admin/new" class="btn-primary">Create Post</a>
@@ -49,7 +56,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each query.data as post (post._id)}
+					{#each query.data.page as post (post._id)}
 						<tr>
 							<td>
 								<a href="/admin/edit/{post._id}" class="post-title">
@@ -75,6 +82,12 @@
 					{/each}
 				</tbody>
 			</table>
+			
+			{#if !query.data.isDone}
+				<div class="load-more">
+					<button onclick={loadMore} class="btn-secondary">Load More</button>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -234,5 +247,15 @@
 	.btn-small:hover {
 		border-color: #999;
 		background: #f5f5f5;
+	}
+	
+	.load-more {
+		padding: 1.5rem;
+		text-align: center;
+		border-top: 1px solid #e0e0e0;
+	}
+	
+	.load-more button {
+		cursor: pointer;
 	}
 </style>

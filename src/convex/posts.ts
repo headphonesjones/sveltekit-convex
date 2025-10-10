@@ -1,7 +1,25 @@
-import { query, mutation } from './_generated/server';
+import { query, mutation, QueryCtx, MutationCtx } from './_generated/server';
 import { v } from 'convex/values';
+import { Doc, Id } from './_generated/dataModel';
+
+// Helper function to check if slug exists
+async function slugExists(
+	ctx: QueryCtx | MutationCtx,
+	slug: string,
+	excludeId?: Id<'posts'>
+): Promise<boolean> {
+	const existing = await ctx.db
+		.query('posts')
+		.withIndex('by_slug', (q) => q.eq('slug', slug))
+		.first();
+	
+	if (!existing) return false;
+	if (excludeId && existing._id === excludeId) return false;
+	return true;
+}
 
 // Get all published posts (for public blog listing)
+// Returns only fields needed for the listing page (excludes large 'content' field)
 export const listPublished = query({
 	args: {
 		limit: v.optional(v.number())
@@ -9,13 +27,25 @@ export const listPublished = query({
 	handler: async (ctx, args) => {
 		const limit = args.limit ?? 20;
 		
-		return await ctx.db
+		const posts = await ctx.db
 			.query('posts')
 			.withIndex('by_published', (q) => 
 				q.eq('published', true)
 			)
 			.order('desc')
 			.take(limit);
+		
+		// Return only fields needed for listing (excludes large 'content' field)
+		return posts.map(post => ({
+			_id: post._id,
+			_creationTime: post._creationTime,
+			title: post.title,
+			slug: post.slug,
+			excerpt: post.excerpt,
+			publishedAt: post.publishedAt,
+			createdAt: post.createdAt,
+			tags: post.tags
+		}));
 	}
 });
 
@@ -44,7 +74,13 @@ export const getBySlug = query({
 
 // Get all posts (including drafts) - for admin
 export const listAll = query({
-	handler: async (ctx) => {
+	args: {
+		paginationOpts: v.object({
+			numItems: v.number(),
+			cursor: v.union(v.string(), v.null())
+		})
+	},
+	handler: async (ctx, args) => {
 		// In production, add auth check here
 		// const identity = await ctx.auth.getUserIdentity();
 		// if (!identity) throw new Error('Not authenticated');
@@ -53,7 +89,7 @@ export const listAll = query({
 			.query('posts')
 			.withIndex('by_created')
 			.order('desc')
-			.collect();
+			.paginate(args.paginationOpts);
 	}
 });
 
@@ -85,12 +121,7 @@ export const create = mutation({
 		// if (!identity) throw new Error('Not authenticated');
 		
 		// Check if slug already exists
-		const existing = await ctx.db
-			.query('posts')
-			.withIndex('by_slug', (q) => q.eq('slug', args.slug))
-			.first();
-		
-		if (existing) {
+		if (await slugExists(ctx, args.slug)) {
 			throw new Error('A post with this slug already exists');
 		}
 		
@@ -138,12 +169,7 @@ export const update = mutation({
 		
 		// If slug is being updated, check for duplicates
 		if (updates.slug && updates.slug !== existingPost.slug) {
-			const duplicate = await ctx.db
-				.query('posts')
-				.withIndex('by_slug', (q) => q.eq('slug', updates.slug!))
-				.first();
-			
-			if (duplicate) {
+			if (await slugExists(ctx, updates.slug, id)) {
 				throw new Error('A post with this slug already exists');
 			}
 		}
